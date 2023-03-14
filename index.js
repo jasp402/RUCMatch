@@ -9,19 +9,21 @@ const {Sequelize, Op} = require('sequelize');
 //Local settings
 const sequelize = require('./db/init.db.js');
 const {
-    MESSAGE,
-    URLS,
-    PATHS,
-    CONFIG,
-    LOCAL_DB
-} = require('./utils/constants.js');
+          MESSAGE,
+          URLS,
+          PATHS,
+          CONFIG,
+          LOCAL_DB,
+          PAGE
+      }         = require('./utils/constants.js');
 
 //Models
 const dataRaw  = sequelize.models.data;
 const settings = sequelize.models.settings;
+let lastUpdate = undefined;
 
 //init db
-(async () => {
+const _connectToInternalDatabase = async () => {
     try {
         await sequelize.authenticate();
         console.log(MESSAGE.DB_CONNECT_SUCCESS);
@@ -30,51 +32,67 @@ const settings = sequelize.models.settings;
     } catch (error) {
         console.error(MESSAGE.DB_CONNECT_FAIL, error);
     }
-})();
+};
 
-async function _getPageHtml() {
-    const response = await axios.get(URLS.BASE_URL);
-    return response.data;
-}
+const _getLastUpdate = async () => {
+    try {
+        const response = await axios.get(URLS.BASE_URL);
+        const $        = cheerio.load(response.data);
 
-async function _getLastUpdate() {
-    const html        = await _getPageHtml();
-    const $           = cheerio.load(html);
-    const last_update = $('body > div:eq(0) table:first tbody tr td:eq(0)')
-        .html()
-        .match(/(\d{2})\/(\d{2})\/(\d{4})/)[0]
-        .split('/')
-        .reverse()
-        .join('-');
-    return last_update;
-}
+        const pageTitle = $('title').text();
+        if (pageTitle !== PAGE.TITLE) throw new Error(MESSAGE.PAGE_NOT_LOAD);
 
-async function _unZip() {
-    const zip = new AdmZip(PATHS.ZIP_FILE, true);
-    zip.extractAllTo(PATHS.UNZIP_FILE, true, false, stderr => {
-        console.log(stderr);
+        const lastUpdate = $('body > div:eq(0) table:first tbody tr td:eq(0)')
+            .html()
+            .match(/(\d{2})\/(\d{2})\/(\d{4})/)[0]
+            .split('/')
+            .reverse()
+            .join('-');
+        if (lastUpdate) return lastUpdate;
+        else return null;
+    } catch (error) {
+        console.error(PAGE.PAGE_NOT_GET_LAST_UPDATE, error);
+    }
+};
+
+const _unZipFile = async () => {
+    const zipFile = new AdmZip(PATHS.ZIP_FILE, true);
+    zipFile.extractAllTo(PATHS.UNZIP_FILE, true, false, (error) => {
+        if (error) {
+            console.error(error);
+        } else {
+            console.log(MESSAGE.UNZIP_FILE_ERROR);
+        }
     });
-    console.log('Archivo descomprimido');
 }
 
-async function _insertData(data) {
+const _insertData = async (data) => {
     await sequelize.sync();
-    return await dataRaw.bulkCreate(data, {
+    await dataRaw.bulkCreate(data, {
         ignoreDuplicates: true,
     });
+    await settings.update({
+        state: 'inactive'
+    }, {
+        where: {}
+    });
+    await settings.create({
+        current_sync: new Date(lastUpdate),
+        total_update: data.length,
+        state       : 'active'
+    })
+    await sequelize.close();
 }
 
-async function _formattingCSV() {
-    const inputFilePath  = PATHS.TXT_FILE;
-    const outputFilePath = PATHS.CSV_FILE;
-    const fileContent    = fs.readFileSync(inputFilePath, 'utf-8');
-    const lines          = fileContent.split('\r');
+const _formattingCSV = async () => {
+    const fileContent = fs.readFileSync(PATHS.TXT_FILE, 'utf-8');
+    const lines       = fileContent.split('\r');
     lines.shift();
     const newFileContent = lines.join('\n');
-    fs.writeFileSync(outputFilePath, `${CONFIG.CSV_HEADER}\n${newFileContent}`);
+    fs.writeFileSync(PATHS.CSV_FILE, `${CONFIG.CSV_HEADER}\n${newFileContent}`);
 }
 
-async function _updateData() {
+const _updateData = async () => {
     const resultados = [];
     await _formattingCSV();
     fs.createReadStream(PATHS.CSV_FILE)
@@ -88,16 +106,19 @@ async function _updateData() {
 }
 
 async function updateFromSunat() {
-    const lastUpdate = await _getLastUpdate();
-    const settingRow = await settings.findOne();
+    lastUpdate       = await _getLastUpdate();
+    const settingRow = await settings.findOne({
+        where: {
+            state: 'active'
+        }
+    });
     let download     = false;
     if (!settingRow) {
-        //ejecutar la sincronización por primera vez
         download = true;
     } else {
-        console.log(settingRow.current_sync, lastUpdate);
-        if (new Date(settingRow.current_sync) !== new Date(lastUpdate)) {
-            //generar una nueva sincronización
+        let current_sync = settingRow.current_sync.toISOString().substring(0, 10);
+        console.log(current_sync, lastUpdate);
+        if (current_sync !== lastUpdate) {
             download = true;
         }
     }
@@ -113,7 +134,7 @@ async function updateFromSunat() {
                 }
                 fs.writeFileSync(PATHS.ZIP_FILE, response.data);
                 console.log('Descarga completa');
-                _unZip();
+                _unZipFile();
                 _updateData();
             })
             .catch((error) => {
@@ -121,14 +142,16 @@ async function updateFromSunat() {
                 fs.unlinkSync(PATHS.ZIP_FILE);
                 console.log('Archivo eliminado');
             });
+    } else {
+        console.log('No hay actualizaciones recientes');
     }
 }
 
 async function matchFromLocalDB() {
     const sequelize = new Sequelize(LOCAL_DB.DB_NAME, LOCAL_DB.DB_USER, LOCAL_DB.DB_PASS, {
         dialect: 'mysql',
-        host: 'localhost',
-        port: LOCAL_DB.DB_PORT
+        host   : 'localhost',
+        port   : LOCAL_DB.DB_PORT
     });
 
     sequelize.query(`SELECT ${LOCAL_DB.DB_FIELD} FROM ${LOCAL_DB.DB_TABLE} c WHERE ${LOCAL_DB.DB_FIELD} != ''`, {type: Sequelize.QueryTypes.SELECT})
@@ -157,6 +180,8 @@ async function matchFromLocalDB() {
 }
 
 async function getRandomRuc(searchRuc = null) {
+    await _connectToInternalDatabase();
+
     let opt = {where: {state: ''}};
     if (searchRuc) {
         //Hacer match para sincronizar ruc usados
@@ -173,6 +198,9 @@ async function getRandomRuc(searchRuc = null) {
         return null;
     }
 }
+
+//Todo: disableRUC
+//Todo: freeRUC
 
 module.exports = {
     updateFromSunat,
