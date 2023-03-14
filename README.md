@@ -1,2 +1,25 @@
 # RUCMatch
-RUCMatch es una aplicación diseñada para la generación dinámica de números de RUC peruanos, especialmente para realizar pruebas o testing. Con RUCMatch, los usuarios pueden obtener rápidamente un número de RUC válidos para uso en pruebas o testing de aplicaciones.
+RUCMatch is an application designed for the dynamic generation of Peruvian RUC numbers, especially for testing. With RUCMatch, users can quickly obtain a valid RUC number for use in testing or application testing.
+
+# Getting Started
+Prerequisites
+- Node.js v10+
+- npm
+
+# Installation
+Install from npm:
+````js
+npm i rucmatch
+````
+
+# Built With
+
+- Node.js
+- Sequelize
+- Cheerio
+- Adm-zip
+- Axios
+- csv-parser
+
+# License
+This project is licensed under the MIT License - see the LICENSE file for details.
