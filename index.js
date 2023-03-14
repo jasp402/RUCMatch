@@ -64,7 +64,7 @@ async function _insertData(data) {
     });
 }
 
-async function _formattingCSV(settings) {
+async function _formattingCSV() {
     const inputFilePath  = PATHS.TXT_FILE;
     const outputFilePath = PATHS.CSV_FILE;
     const fileContent    = fs.readFileSync(inputFilePath, 'utf-8');
@@ -76,7 +76,7 @@ async function _formattingCSV(settings) {
 
 async function _updateData() {
     const resultados = [];
-    await _formattingCSV(settings);
+    await _formattingCSV();
     fs.createReadStream(PATHS.CSV_FILE)
         .pipe(csv({separator: '|'}))
         .on('data', (data) => {
@@ -131,16 +131,15 @@ async function matchFromLocalDB() {
         port: LOCAL_DB.DB_PORT
     });
 
-    sequelize.query("SELECT identificador_tributario FROM comercio c WHERE identificador_tributario != ''", {type: Sequelize.QueryTypes.SELECT})
+    sequelize.query(`SELECT ${LOCAL_DB.DB_FIELD} FROM ${LOCAL_DB.DB_TABLE} c WHERE ${LOCAL_DB.DB_FIELD} != ''`, {type: Sequelize.QueryTypes.SELECT})
         .then(result => {
             let countRuc = 0;
             console.log(`Total RUC found: ${result.length}`)
             result.forEach(async (row, i) => {
-                console.log(`RUC #${i}`);
 
                 let rowUpdated = await dataRaw.update(
                     {state: 'used'},
-                    {where: {ruc: row.identificador_tributario}}
+                    {where: {ruc: row[`${LOCAL_DB.DB_FIELD}`]}}
                 );
                 if (rowUpdated[0]) {
                     countRuc++;
@@ -157,7 +156,7 @@ async function matchFromLocalDB() {
         });
 }
 
-async function getRuc(searchRuc = null) {
+async function getRandomRuc(searchRuc = null) {
     let opt = {where: {state: ''}};
     if (searchRuc) {
         //Hacer match para sincronizar ruc usados
@@ -175,10 +174,8 @@ async function getRuc(searchRuc = null) {
     }
 }
 
-// main(true).then(r => console.log('result:', r));
-// updateFromSunat();
-matchFromLocalDB();
-
-// getRuc().then(result => {
-//     console.log(result);
-// });
+module.exports = {
+    updateFromSunat,
+    matchFromLocalDB,
+    getRandomRuc
+}
