@@ -9,11 +9,12 @@ const {Sequelize, Op} = require('sequelize');
 //Local settings
 const sequelize = require('./db/init.db.js');
 const {
-          MESSAGE,
-          URLS,
-          PATHS,
-          CONFIG
-      }         = require('./utils/constants.js');
+    MESSAGE,
+    URLS,
+    PATHS,
+    CONFIG,
+    LOCAL_DB
+} = require('./utils/constants.js');
 
 //Models
 const dataRaw  = sequelize.models.data;
@@ -124,32 +125,60 @@ async function updateFromSunat() {
 }
 
 async function matchFromLocalDB() {
-    const sequelize = new Sequelize('database', 'usuario', 'contraseña', {
+    const sequelize = new Sequelize(LOCAL_DB.DB_NAME, LOCAL_DB.DB_USER, LOCAL_DB.DB_PASS, {
         dialect: 'mysql',
-        host   : 'localhost',
-        port   : 3306
+        host: 'localhost',
+        port: LOCAL_DB.DB_PORT
     });
 
-    sequelize.query('SELECT * FROM mi_tabla', { type: Sequelize.QueryTypes.SELECT })
+    sequelize.query("SELECT identificador_tributario FROM comercio c WHERE identificador_tributario != ''", {type: Sequelize.QueryTypes.SELECT})
         .then(result => {
-            console.log(result);
+            let countRuc = 0;
+            console.log(`Total RUC found: ${result.length}`)
+            result.forEach(async (row, i) => {
+                console.log(`RUC #${i}`);
+
+                let rowUpdated = await dataRaw.update(
+                    {state: 'used'},
+                    {where: {ruc: row.identificador_tributario}}
+                );
+                if (rowUpdated[0]) {
+                    countRuc++;
+                    console.log(`Total Update: ${countRuc}`);
+                } else {
+                    console.log(row)
+                }
+
+
+            })
         })
         .catch(err => {
             console.error(err);
         });
 }
-async function main(searchRuc = null) {
-    let opt = {where: {state: '', resolution_number: {[Op.not]: null}}};
+
+async function getRuc(searchRuc = null) {
+    let opt = {where: {state: ''}};
     if (searchRuc) {
         //Hacer match para sincronizar ruc usados
         opt = {where: {state: null, resolution_number: {[Op.not]: null}, ruc: searchRuc}};
     }
     const result = await dataRaw.findOne(opt);
     if (result) {
+        let rowUpdated = await dataRaw.update(
+            {state: 'reserved'},
+            {where: {ruc: result.dataValues.ruc}}
+        );
         return result.dataValues;
-    }else{
+    } else {
         return null;
     }
 }
 
-main(true).then(r => console.log('result:', r));
+// main(true).then(r => console.log('result:', r));
+// updateFromSunat();
+matchFromLocalDB();
+
+// getRuc().then(result => {
+//     console.log(result);
+// });
