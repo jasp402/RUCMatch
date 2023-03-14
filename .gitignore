@@ -1,0 +1,33 @@
+# Carpeta node_modules
+node_modules/
+
+# Archivos generados por el sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de registro
+*.log
+
+# Archivos de configuración
+.env
+
+# Archivos de construcción
+/build
+/dist
+
+# Dependencias de desarrollo
+/dev
+
+# Dependencias de desarrollo específicas del sistema operativo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos de caché
+.cache
+
+# Exclude by user
+/db/database.sqlite
+/downloads/
+/package-lock.json
+/.idea/

@@ -1,0 +1,12 @@
+{
+  "define": {
+    "freezeTableName": true
+  },
+  "database": "ruc_match_storage",
+  "username": "root",
+  "password": null,
+  "dialect": "sqlite",
+  "host": "127.0.0.1",
+  "storage": "./db/database.sqlite",
+  "logging": false
+}
